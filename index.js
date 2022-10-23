@@ -15,7 +15,7 @@ const GOT_OPTIONS = {
 	}
 };
 
-const FA_RELEASES_PAGE = 'https://github.com/FortAwesome/Font-Awesome/releases';
+const FA_RELEASES_PAGE = 'https://github.com/FortAwesome/Font-Awesome/releases/latest';
 const FA_PRO_ASSET_BASE = 'https://kit-pro.fontawesome.com';
 
 const fontUrlRegex = /url\((.*?)\)/gm;
@@ -25,18 +25,16 @@ const githubReleasesRegex =/>(.*?)</;
 main();
 
 async function main() {
-	spinnies.add('loading-versions', { text: 'Loading Font Awesome 5 versions' });
-	const versions = await getFA5Versions();
-	if (!versions || !versions[0]) {
-		spinnies.fail('loading-versions', { text: 'Failed to load Font Awesome 5 versions' });
+	spinnies.add('loading-versions', { text: 'Loading FA latest version' });
+	const latestVersion = await getLatestVersion();
+	if (!latestVersion) {
+		spinnies.fail('loading-versions', { text: 'Failed to load FA latest version' });
 		return;
 	}
 
-	spinnies.succeed('loading-versions', { text: 'Loaded Font Awesome 5 versions' });
-
-	const latestVersion = versions[0];
+	spinnies.succeed('loading-versions', { text: 'Loaded FA latest version' });
 	
-	spinnies.add('ripping-start', { text: `Ripping FA5 v${latestVersion}` });
+	spinnies.add('ripping-start', { text: `Ripping FA v${latestVersion}` });
 
 	const zip = new AdmZip();
 	const css = await got.get(`${FA_PRO_ASSET_BASE}/releases/v${latestVersion}/css/pro.min.css`, GOT_OPTIONS);
@@ -44,7 +42,7 @@ async function main() {
 	GOT_OPTIONS.encoding = null;
 
 	const fontUrls = css.body
-		.match(fontUrlRegex).map(url => url.replace('url(', '').replace(')', '').replace('../../..', FA_PRO_ASSET_BASE));;
+		.match(fontUrlRegex).map(url => url.replace('url(', '').replace(')', '').replace('../', `${FA_PRO_ASSET_BASE}/releases/v${latestVersion}/`));;
 
 	const cssFile = css.body
 		.replace(/https:\/\/kit-free.fontawesome.com\/algo\/1/g, '..')
@@ -52,7 +50,6 @@ async function main() {
 		.replace(/webfonts/g, 'fonts');
 
 	zip.addFile('css/all.css', Buffer.from(cssFile));
-
 	async.each(fontUrls, (fontUrl, callback) => {
 		
 		const fileName = path.basename(url.parse(fontUrl).pathname);
@@ -67,22 +64,12 @@ async function main() {
 				callback();
 			});
 	}, () => {
-		fs.writeFileSync(`${__dirname}/fa5-v${latestVersion}.zip`, zip.toBuffer());
-		spinnies.succeed('ripping-start', { text: `Ripped FA5 v${latestVersion}. Saved to ${__dirname}/fa5-v${latestVersion}.zip` });
+		fs.writeFileSync(`${__dirname}/fa-v${latestVersion}.zip`, zip.toBuffer());
+		spinnies.succeed('ripping-start', { text: `Ripped FA v${latestVersion}. Saved to ${__dirname}/fa-v${latestVersion}.zip` });
 	});
 }
 
-async function getFA5Versions() {
-	// I decided to use RegEx on HTML rather than use the API to try and get around ratelimits
-	// This will break if GH changes the html layout
+async function getLatestVersion() {
 	const response = await got(FA_RELEASES_PAGE);
-	const html = response.body;
-
-	const spans = html.match(githubSpansRegex);
-
-	const versions = spans.map(span => {
-		return span.match(githubReleasesRegex)[1].replace('Release', '').trim();
-	});
-
-	return versions;
+	return response.redirectUrls[0].split('/').slice(-1);
 }
